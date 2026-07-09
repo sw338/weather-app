@@ -10,15 +10,31 @@ interface WeatherData {
   forecast: { day: string; temp: number; icon: string }[];
 }
 
-const mockData: Record<string, WeatherData> = {
-  "北京": { city: "北京", temp: 28, humidity: 45, wind: "北风 3级", desc: "晴朗", icon: "☀️", forecast: [{ day: "明天", temp: 30, icon: "☀️" }, { day: "后天", temp: 26, icon: "⛅" }, { day: "大后天", temp: 22, icon: "🌧️" }] },
-  "上海": { city: "上海", temp: 32, humidity: 70, wind: "东南风 4级", desc: "多云", icon: "⛅", forecast: [{ day: "明天", temp: 33, icon: "☀️" }, { day: "后天", temp: 31, icon: "⛅" }, { day: "大后天", temp: 28, icon: "🌧️" }] },
-  "广州": { city: "广州", temp: 35, humidity: 80, wind: "南风 2级", desc: "雷阵雨", icon: "⛈️", forecast: [{ day: "明天", temp: 34, icon: "⛈️" }, { day: "后天", temp: 33, icon: "🌧️" }, { day: "大后天", temp: 30, icon: "⛅" }] },
-  "成都": { city: "成都", temp: 25, humidity: 65, wind: "微风 2级", desc: "阴天", icon: "☁️", forecast: [{ day: "明天", temp: 24, icon: "🌧️" }, { day: "后天", temp: 26, icon: "⛅" }, { day: "大后天", temp: 28, icon: "☀️" }] },
-  "哈尔滨": { city: "哈尔滨", temp: 18, humidity: 40, wind: "西风 5级", desc: "小雨", icon: "🌧️", forecast: [{ day: "明天", temp: 16, icon: "🌧️" }, { day: "后天", temp: 20, icon: "⛅" }, { day: "大后天", temp: 22, icon: "☀️" }] },
-};
+// 用城市名生成模拟天气（同一城市始终一致）
+function generateWeather(city: string): WeatherData {
+  const hash = city.split("").reduce((s, c) => s + c.charCodeAt(0), 0);
+  const baseTemp = 15 + (hash % 25);
+  const icons = ["☀️", "⛅", "☁️", "🌧️", "⛈️", "🌤️"];
+  const descs = ["晴朗", "多云", "阴天", "小雨", "雷阵雨", "晴间多云"];
+  const winds = ["北风", "南风", "东风", "西风", "东南风", "西北风", "东北风", "西南风"];
+  const idx = hash % icons.length;
 
-const cities = Object.keys(mockData);
+  return {
+    city,
+    temp: baseTemp,
+    humidity: 30 + (hash % 55),
+    wind: `${winds[hash % winds.length]} ${1 + (hash % 5)}级`,
+    desc: descs[idx],
+    icon: icons[idx],
+    forecast: [
+      { day: "明天", temp: baseTemp + (hash % 5) - 2, icon: icons[(idx + 1) % icons.length] },
+      { day: "后天", temp: baseTemp + (hash % 7) - 3, icon: icons[(idx + 2) % icons.length] },
+      { day: "大后天", temp: baseTemp + (hash % 4) - 1, icon: icons[(idx + 3) % icons.length] },
+    ],
+  };
+}
+
+const popularCities = ["北京", "上海", "广州", "深圳", "成都", "杭州", "武汉", "西安", "南京", "重庆", "哈尔滨", "昆明"];
 
 function App() {
   const [query, setQuery] = useState("");
@@ -28,34 +44,53 @@ function App() {
   function handleInput(val: string) {
     setQuery(val);
     if (val.trim()) {
-      setSuggestions(cities.filter((c) => c.includes(val.trim())));
+      setSuggestions(popularCities.filter((c) => c.includes(val.trim())));
     } else {
       setSuggestions([]);
     }
   }
 
-  function selectCity(name: string) {
-    setQuery(name);
+  function searchCity(name: string) {
+    const city = name.trim();
+    if (!city) return;
+    setQuery(city);
     setSuggestions([]);
-    setSelected(mockData[name] || null);
+    setSelected(generateWeather(city));
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter") {
+      if (suggestions.length > 0) {
+        searchCity(suggestions[0]);
+      } else if (query.trim()) {
+        searchCity(query.trim());
+      }
+    }
   }
 
   return (
     <div className={`min-h-screen flex flex-col items-center justify-start p-4 pt-8 transition-colors ${selected ? (selected.temp > 30 ? "bg-gradient-to-br from-orange-50 to-red-100" : selected.temp < 20 ? "bg-gradient-to-br from-blue-50 to-indigo-100" : "bg-gradient-to-br from-sky-50 to-emerald-100") : "bg-gradient-to-br from-sky-100 to-blue-200"}`}>
       <h1 className="text-3xl font-bold text-gray-800 mb-2">🌤️ 天气查询</h1>
-      <p className="text-gray-500 mb-8">输入城市名查看天气信息</p>
+      <p className="text-gray-500 mb-2">输入任意城市名，按回车查询</p>
 
       <div className="relative w-full max-w-md mb-8">
-        <input
-          type="text" value={query}
-          onChange={(e) => handleInput(e.target.value)}
-          placeholder="输入城市名（如：北京、上海）"
-          className="w-full px-5 py-3 rounded-xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-400 text-gray-700"
-        />
+        <div className="flex gap-2">
+          <input
+            type="text" value={query}
+            onChange={(e) => handleInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="输入城市名，按回车查询…"
+            className="flex-1 px-5 py-3 rounded-xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-400 text-gray-700"
+          />
+          <button onClick={() => searchCity(query)} disabled={!query.trim()}
+            className="px-5 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 disabled:opacity-50 transition-colors">
+            搜索
+          </button>
+        </div>
         {suggestions.length > 0 && (
           <ul className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden z-10">
             {suggestions.map((c) => (
-              <li key={c} onClick={() => selectCity(c)} className="px-5 py-2.5 hover:bg-blue-50 cursor-pointer text-gray-700 text-sm transition-colors">{c}</li>
+              <li key={c} onClick={() => searchCity(c)} className="px-5 py-2.5 hover:bg-blue-50 cursor-pointer text-gray-700 text-sm transition-colors">{c}</li>
             ))}
           </ul>
         )}
@@ -96,16 +131,19 @@ function App() {
         </div>
       )}
 
-      {!selected && (
-        <div className="w-full max-w-md">
-          <p className="text-sm text-gray-500 mb-3 text-center">热门城市</p>
-          <div className="flex flex-wrap gap-2 justify-center">
-            {cities.map((c) => (
-              <button key={c} onClick={() => selectCity(c)} className="px-4 py-2 bg-white rounded-full shadow-sm text-gray-600 text-sm hover:bg-blue-50 hover:text-blue-500 transition-colors">{c}</button>
-            ))}
-          </div>
-        </div>
-      )}
+      <div className="w-full max-w-md mt-4">
+        <p className="text-xs text-gray-400 mb-3 text-center">💡 提示：输入城市名后按回车键或点搜索按钮即可查询。支持任意城市（如 三亚、拉萨、纽约…）</p>
+        {!selected && (
+          <>
+            <p className="text-sm text-gray-500 mb-3 text-center">热门城市</p>
+            <div className="flex flex-wrap gap-2 justify-center">
+              {popularCities.map((c) => (
+                <button key={c} onClick={() => searchCity(c)} className="px-4 py-2 bg-white rounded-full shadow-sm text-gray-600 text-sm hover:bg-blue-50 hover:text-blue-500 transition-colors">{c}</button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
