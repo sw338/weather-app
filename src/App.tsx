@@ -1,48 +1,87 @@
 import { useState } from "react";
 
+interface ForecastDay { day: string; tempMax: number; tempMin: number; icon: string }
 interface WeatherData {
-  city: string;
-  temp: number;
-  humidity: number;
-  windSpeed: number;
-  desc: string;
-  icon: string;
-  forecast: { day: string; tempMax: number; tempMin: number; icon: string }[];
+  city: string; temp: number; humidity: number; windSpeed: number; desc: string; icon: string;
+  forecast: ForecastDay[]; source: "api" | "local";
 }
 
-// WMO 天气码映射
 const weatherCodes: Record<number, { desc: string; icon: string }> = {
-  0: { desc: "晴朗", icon: "☀️" },
-  1: { desc: "大部晴朗", icon: "🌤️" },
-  2: { desc: "多云", icon: "⛅" },
-  3: { desc: "阴天", icon: "☁️" },
-  45: { desc: "雾", icon: "🌫️" },
-  48: { desc: "霜雾", icon: "🌫️" },
-  51: { desc: "小毛毛雨", icon: "🌦️" },
-  53: { desc: "毛毛雨", icon: "🌦️" },
-  55: { desc: "大毛毛雨", icon: "🌧️" },
-  61: { desc: "小雨", icon: "🌧️" },
-  63: { desc: "中雨", icon: "🌧️" },
-  65: { desc: "大雨", icon: "🌧️" },
-  71: { desc: "小雪", icon: "🌨️" },
-  73: { desc: "中雪", icon: "🌨️" },
-  75: { desc: "大雪", icon: "❄️" },
-  77: { desc: "雪粒", icon: "❄️" },
-  80: { desc: "阵雨", icon: "⛈️" },
-  81: { desc: "中阵雨", icon: "⛈️" },
-  82: { desc: "大阵雨", icon: "⛈️" },
-  85: { desc: "小阵雪", icon: "🌨️" },
-  86: { desc: "大阵雪", icon: "❄️" },
-  95: { desc: "雷暴", icon: "⛈️" },
-  96: { desc: "冰雹雷暴", icon: "⛈️" },
-  99: { desc: "强冰雹雷暴", icon: "⛈️" },
+  0: { desc: "晴朗", icon: "☀️" }, 1: { desc: "大部晴朗", icon: "🌤️" }, 2: { desc: "多云", icon: "⛅" },
+  3: { desc: "阴天", icon: "☁️" }, 45: { desc: "雾", icon: "🌫️" }, 48: { desc: "霜雾", icon: "🌫️" },
+  51: { desc: "毛毛雨", icon: "🌦️" }, 53: { desc: "毛毛雨", icon: "🌦️" }, 55: { desc: "毛毛雨", icon: "🌧️" },
+  61: { desc: "小雨", icon: "🌧️" }, 63: { desc: "中雨", icon: "🌧️" }, 65: { desc: "大雨", icon: "🌧️" },
+  71: { desc: "小雪", icon: "🌨️" }, 73: { desc: "中雪", icon: "🌨️" }, 75: { desc: "大雪", icon: "❄️" },
+  77: { desc: "雪粒", icon: "❄️" }, 80: { desc: "阵雨", icon: "⛈️" }, 81: { desc: "中阵雨", icon: "⛈️" },
+  82: { desc: "大阵雨", icon: "⛈️" }, 85: { desc: "小阵雪", icon: "🌨️" }, 86: { desc: "大阵雪", icon: "❄️" },
+  95: { desc: "雷暴", icon: "⛈️" }, 96: { desc: "冰雹雷暴", icon: "⛈️" }, 99: { desc: "强冰雹雷暴", icon: "⛈️" },
 };
-
-function getWeatherInfo(code: number) {
-  return weatherCodes[code] || { desc: "未知", icon: "🌤️" };
-}
+function getWeatherInfo(code: number) { return weatherCodes[code] || { desc: "未知", icon: "🌤️" }; }
 
 const popularCities = ["北京", "上海", "广州", "深圳", "成都", "杭州", "武汉", "西安", "南京", "重庆", "哈尔滨", "昆明", "伦敦", "纽约", "东京", "巴黎"];
+
+// 本地生成天气（API 不通时的降级方案）
+function generateLocalWeather(city: string): WeatherData {
+  const hash = city.split("").reduce((s, c) => s + c.charCodeAt(0), 0);
+  const icons = ["☀️", "⛅", "☁️", "🌧️", "⛈️", "🌤️"];
+  const descs = ["晴朗", "多云", "阴天", "小雨", "雷阵雨", "晴间多云"];
+  const idx = hash % icons.length;
+  const baseTemp = 10 + (hash % 25);
+  return {
+    city,
+    temp: baseTemp,
+    humidity: 30 + (hash % 50),
+    windSpeed: 1 + (hash % 20),
+    desc: descs[idx],
+    icon: icons[idx],
+    source: "local",
+    forecast: [
+      { day: "明天", tempMax: baseTemp + (hash % 6) - 2, tempMin: baseTemp - 3 + (hash % 4), icon: icons[(idx + 1) % icons.length] },
+      { day: "后天", tempMax: baseTemp + (hash % 8) - 3, tempMin: baseTemp - 2 + (hash % 3), icon: icons[(idx + 2) % icons.length] },
+      { day: "大后天", tempMax: baseTemp + (hash % 5), tempMin: baseTemp - 1 + (hash % 2), icon: icons[(idx + 3) % icons.length] },
+    ],
+  };
+}
+
+async function fetchFromAPI(city: string): Promise<WeatherData | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const geoRes = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=zh`,
+      { signal: controller.signal }
+    );
+    const geoData = await geoRes.json();
+    if (!geoData.results?.length) return null;
+    const { latitude, longitude, name: cityName, country } = geoData.results[0];
+
+    const weatherRes = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=auto&forecast_days=4`,
+      { signal: controller.signal }
+    );
+    const wd = await weatherRes.json();
+    const c = wd.current_weather;
+    const d = wd.daily;
+    const info = getWeatherInfo(c.weathercode);
+    return {
+      city: `${cityName}${country ? ", " + country : ""}`,
+      temp: Math.round(c.temperature),
+      humidity: c.relative_humidity_2m ?? Math.round(40 + Math.random() * 40),
+      windSpeed: Math.round(c.windspeed),
+      desc: info.desc, icon: info.icon,
+      source: "api",
+      forecast: [
+        { day: "明天", tempMax: Math.round(d.temperature_2m_max[1]), tempMin: Math.round(d.temperature_2m_min[1]), icon: getWeatherInfo(d.weathercode[1]).icon },
+        { day: "后天", tempMax: Math.round(d.temperature_2m_max[2]), tempMin: Math.round(d.temperature_2m_min[2]), icon: getWeatherInfo(d.weathercode[2]).icon },
+        { day: "大后天", tempMax: Math.round(d.temperature_2m_max[3]), tempMin: Math.round(d.temperature_2m_min[3]), icon: getWeatherInfo(d.weathercode[3]).icon },
+      ],
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 function App() {
   const [query, setQuery] = useState("");
@@ -53,62 +92,19 @@ function App() {
 
   function handleInput(val: string) {
     setQuery(val);
-    if (val.trim()) {
-      setSuggestions(popularCities.filter((c) => c.includes(val.trim())));
-    } else {
-      setSuggestions([]);
-    }
+    setSuggestions(val.trim() ? popularCities.filter((c) => c.includes(val.trim())) : []);
   }
 
   async function searchCity(name: string) {
     const city = name.trim();
     if (!city) return;
-    setQuery(city);
-    setSuggestions([]);
-    setError("");
-    setLoading(true);
-
-    try {
-      // Step 1: 地理编码 — 城市名 → 坐标
-      const geoRes = await fetch(
-        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=zh`
-      );
-      const geoData = await geoRes.json();
-
-      if (!geoData.results?.length) {
-        setError(`未找到城市「${city}」，请检查名称后重试`);
-        setLoading(false);
-        return;
-      }
-
-      const { latitude, longitude, name: cityName, country } = geoData.results[0];
-
-      // Step 2: 获取天气
-      const weatherRes = await fetch(
-        `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=auto&forecast_days=4`
-      );
-      const weatherData = await weatherRes.json();
-
-      const current = weatherData.current_weather;
-      const daily = weatherData.daily;
-      const info = getWeatherInfo(current.weathercode);
-
-      setWeather({
-        city: `${cityName}${country ? ", " + country : ""}`,
-        temp: Math.round(current.temperature),
-        humidity: current.relative_humidity_2m ?? Math.round(40 + Math.random() * 40),
-        windSpeed: Math.round(current.windspeed),
-        desc: info.desc,
-        icon: info.icon,
-        forecast: [
-          { day: "明天", tempMax: Math.round(daily.temperature_2m_max[1]), tempMin: Math.round(daily.temperature_2m_min[1]), icon: getWeatherInfo(daily.weathercode[1]).icon },
-          { day: "后天", tempMax: Math.round(daily.temperature_2m_max[2]), tempMin: Math.round(daily.temperature_2m_min[2]), icon: getWeatherInfo(daily.weathercode[2]).icon },
-          { day: "大后天", tempMax: Math.round(daily.temperature_2m_max[3]), tempMin: Math.round(daily.temperature_2m_min[3]), icon: getWeatherInfo(daily.weathercode[3]).icon },
-        ],
-      });
-    } catch {
-      setError("网络请求失败，请检查网络后重试");
-    }
+    setQuery(city); setSuggestions([]); setError(""); setLoading(true);
+    const apiResult = await fetchFromAPI(city);
+    if (apiResult) { setWeather(apiResult); setLoading(false); return; }
+    // API 不通 → 本地降级
+    const localResult = generateLocalWeather(city);
+    setError("⚠️ 实时 API 暂时不可用，显示的是模拟天气数据");
+    setWeather(localResult);
     setLoading(false);
   }
 
@@ -122,19 +118,17 @@ function App() {
   return (
     <div className={`min-h-screen flex flex-col items-center justify-start p-4 pt-8 transition-colors ${weather ? (weather.temp > 30 ? "bg-gradient-to-br from-orange-50 to-red-100" : weather.temp < 15 ? "bg-gradient-to-br from-blue-50 to-indigo-100" : "bg-gradient-to-br from-sky-50 to-emerald-100") : "bg-gradient-to-br from-sky-100 to-blue-200"}`}>
       <h1 className="text-3xl font-bold text-gray-800 mb-2">🌤️ 天气查询</h1>
-      <p className="text-gray-500 mb-2">实时天气 · 全球城市 · 免费 API</p>
+      <p className="text-gray-500 mb-2">全球城市 · 实时 + 本地双模式</p>
 
       <div className="relative w-full max-w-md mb-6">
         <div className="flex gap-2">
-          <input type="text" value={query}
-            onChange={(e) => handleInput(e.target.value)}
-            onKeyDown={handleKeyDown}
+          <input type="text" value={query} onChange={(e) => handleInput(e.target.value)} onKeyDown={handleKeyDown}
             placeholder="输入城市名，按回车查询…"
             className="flex-1 px-5 py-3 rounded-xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-400 text-gray-700"
           />
           <button onClick={() => searchCity(query)} disabled={!query.trim() || loading}
             className="px-5 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 disabled:opacity-50 transition-colors">
-            {loading ? "查询中…" : "搜索"}
+            {loading ? "…" : "搜索"}
           </button>
         </div>
         {suggestions.length > 0 && (
@@ -146,14 +140,14 @@ function App() {
         )}
       </div>
 
-      {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+      {error && <p className="text-amber-600 text-xs mb-4">{error}</p>}
 
       {weather && (
         <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-2xl font-bold text-gray-800">{weather.city}</h2>
-              <p className="text-gray-400 text-sm">{weather.desc}</p>
+              <p className="text-gray-400 text-sm">{weather.desc} {weather.source === "local" && <span className="text-amber-500 text-xs">(模拟)</span>}</p>
             </div>
             <span className="text-6xl">{weather.icon}</span>
           </div>
@@ -184,7 +178,7 @@ function App() {
       )}
 
       <div className="w-full max-w-md mt-4">
-        <p className="text-xs text-gray-400 mb-3 text-center">💡 数据源：Open-Meteo 免费天气 API，支持全球任意城市</p>
+        <p className="text-xs text-gray-400 mb-3 text-center">💡 优先使用 Open-Meteo 实时天气，不通时自动降级为本地模拟</p>
         {!weather && !loading && (
           <>
             <p className="text-sm text-gray-500 mb-3 text-center">热门城市</p>
