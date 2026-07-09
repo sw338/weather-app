@@ -45,7 +45,7 @@ function generateLocalWeather(city: string): WeatherData {
 
 async function fetchFromAPI(city: string): Promise<WeatherData | null> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
+  const timeout = setTimeout(() => controller.abort(), 10000);
   try {
     const geoRes = await fetch(
       `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=zh`,
@@ -101,10 +101,9 @@ function App() {
     setQuery(city); setSuggestions([]); setError(""); setLoading(true);
     const apiResult = await fetchFromAPI(city);
     if (apiResult) { setWeather(apiResult); setLoading(false); return; }
-    // API 不通 → 本地降级
-    const localResult = generateLocalWeather(city);
-    setError("⚠️ 实时 API 暂时不可用，显示的是模拟天气数据");
-    setWeather(localResult);
+    // API 不通 → 本地降级（100% 可靠）
+    setWeather(generateLocalWeather(city));
+    setError("fallback");
     setLoading(false);
   }
 
@@ -140,7 +139,12 @@ function App() {
         )}
       </div>
 
-      {error && <p className="text-amber-600 text-xs mb-4">{error}</p>}
+      {error === "fallback" && weather && (
+        <div className="w-full max-w-md bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+          <p className="text-sm font-semibold text-amber-800 mb-1">⚠️ 网络连接不稳定</p>
+          <p className="text-xs text-amber-600">无法获取实时天气数据，当前显示的是本地模拟数据，仅供参考</p>
+        </div>
+      )}
 
       {weather && (
         <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-6">
